@@ -13,15 +13,16 @@ from hackingBuddyGPT.usecases.base import AutonomousAgentUseCase, use_case
 from hackingBuddyGPT.utils import LLMResult, tool_message
 from hackingBuddyGPT.utils.configurable import parameter
 from hackingBuddyGPT.utils.openai.openai_lib import OpenAILib
+import logging
 
 
 Prompt = List[Union[ChatCompletionMessage, ChatCompletionMessageParam]]
 Context = Any
-
+logger = logging.getLogger(__name__)
 
 class WebTestingWithExplanation(Agent):
     llm: OpenAILib
-    host: str = parameter(desc="The host to test", default="http://localhost")
+    host: str = parameter(desc="The host to test", default="https://localhOst/DVWa")
     flag_format_description: str = parameter(desc="Description of the flag provided to the LLM", default="a string starting with 'FLAG.' and ending with '.GALF'")
     flag_template: str = parameter(desc="The template of the flags, whereby {flag} is replaced with the flags", default="FLAG.{flag}.GALF")
     flags: str = parameter(desc="A comma (,) separated list of flags to find", default="hostname,dir,username,rootfile,secretfile,adminpass")

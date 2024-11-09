@@ -16,8 +16,9 @@ from hackingBuddyGPT.usecases.web_api_testing.response_processing.response_handl
 from hackingBuddyGPT.utils.configurable import parameter
 from hackingBuddyGPT.utils.openai.openai_lib import OpenAILib
 from hackingBuddyGPT.usecases.base import AutonomousAgentUseCase, use_case
+import logging
 
-
+logger = logging.getLogger(__name__)
 
 class SimpleWebAPIDocumentation(Agent):
     """
@@ -37,7 +38,7 @@ class SimpleWebAPIDocumentation(Agent):
     """
 
     llm: OpenAILib
-    host: str = parameter(desc="The host to test", default="https://jsonplaceholder.typicode.com")
+    host: str = parameter(desc="The host to test", default="http://localhost:8080/docs/")
     _prompt_history: Prompt = field(default_factory=list)
     _context: Context = field(default_factory=lambda: {"notes": list()})
     _capabilities: Dict[str, Capability] = field(default_factory=dict)
@@ -84,7 +85,8 @@ class SimpleWebAPIDocumentation(Agent):
             "role": "system",
             "content": f"You're tasked with documenting the REST APIs of a website hosted at {self.host}. "
                        f"Start with an empty OpenAPI specification.\n"
-                       f"Maintain meticulousness in documenting your observations as you traverse the APIs."
+                       f"Maintain meticulousness in documenting your observations as you traverse the APIs. Remmber to always be clear and consice in your documentation."
+                       f"Always document the API in english and make sure it is readable"
         }
         self._prompt_history.append(initial_prompt)
         handlers = (self.llm_handler, self.response_handler)

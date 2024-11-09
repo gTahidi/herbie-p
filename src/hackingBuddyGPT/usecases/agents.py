@@ -8,6 +8,9 @@ from hackingBuddyGPT.usecases.base import Logger
 from hackingBuddyGPT.utils import llm_util
 from hackingBuddyGPT.capabilities.capability import Capability, capabilities_to_simple_text_handler
 from hackingBuddyGPT.utils.openai.openai_llm import OpenAIConnection
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

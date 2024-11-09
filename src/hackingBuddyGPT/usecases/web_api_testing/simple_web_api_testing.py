@@ -20,11 +20,13 @@ from hackingBuddyGPT.utils import tool_message
 from hackingBuddyGPT.utils.configurable import parameter
 from hackingBuddyGPT.utils.openai.openai_lib import OpenAILib
 from hackingBuddyGPT.usecases.base import AutonomousAgentUseCase, use_case
-
+import logging
 
 # OpenAPI specification file path
-openapi_spec_filename = "/home/diana/Desktop/masterthesis/00/hackingBuddyGPT/src/hackingBuddyGPT/usecases/web_api_testing/utils/openapi_spec/openapi_spec_2024-08-16_14-14-07.yaml"
+openapi_spec_filename = "/home/add-tester/Desktop/openapi.json"
 
+
+logger = logging.getLogger(__name__)
 
 class SimpleWebAPITesting(Agent):
     """
@@ -43,7 +45,7 @@ class SimpleWebAPITesting(Agent):
     """
 
     llm: OpenAILib
-    host: str = parameter(desc="The host to test", default="https://jsonplaceholder.typicode.com")
+    host: str = parameter(desc="The host to test, hint check for swagger docs", default="http://localhost:8080/docs/")
     http_method_description: str = parameter(
         desc="Pattern description for expected HTTP methods in the API response",
         default="A string that represents an HTTP method (e.g., 'GET', 'POST', etc.)."

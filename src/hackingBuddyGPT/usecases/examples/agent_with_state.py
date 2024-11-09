@@ -8,7 +8,10 @@ from hackingBuddyGPT.utils import SSHConnection, llm_util
 from hackingBuddyGPT.usecases.base import use_case, AutonomousAgentUseCase
 from hackingBuddyGPT.usecases.agents import TemplatedAgent, AgentWorldview
 from hackingBuddyGPT.utils.cli_history import SlidingCliHistory
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ExPrivEscLinuxTemplatedState(AgentWorldview):

@@ -3,6 +3,12 @@ from datetime import datetime
 import uuid
 from typing import List
 from enum import Enum
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
 
 class ReportHandler:
     """

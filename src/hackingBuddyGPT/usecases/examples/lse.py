@@ -6,11 +6,11 @@ from hackingBuddyGPT.utils.openai.openai_llm import OpenAIConnection
 from hackingBuddyGPT.usecases.privesc.linux import LinuxPrivescUseCase, LinuxPrivesc
 from hackingBuddyGPT.utils import SSHConnection
 from hackingBuddyGPT.usecases.base import UseCase, use_case
-
+import logging
 
 template_dir = pathlib.Path(__file__).parent
 template_lse = Template(filename=str(template_dir / "get_hint_from_lse.txt"))
-
+logger = logging.getLogger(__name__)
 
 @use_case("Linux Privilege Escalation using lse.sh for initial guidance")
 class ExPrivEscLinuxLSEUseCase(UseCase):

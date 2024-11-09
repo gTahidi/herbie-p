@@ -8,8 +8,10 @@ from hackingBuddyGPT.usecases.web_api_testing.prompt_generation.information impo
 from hackingBuddyGPT.usecases.web_api_testing.response_processing.response_analyzer_with_llm import ResponseAnalyzerWithLLM
 from hackingBuddyGPT.usecases.web_api_testing.utils import LLMHandler
 from hackingBuddyGPT.usecases.web_api_testing.utils.custom_datatypes import Prompt
+import logging
 
 
+logger = logging.getLogger(__name__)
 class ResponseHandler:
     """
     ResponseHandler is a class responsible for handling various types of responses from an LLM (Large Language Model).

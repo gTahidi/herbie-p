@@ -1,0 +1,12 @@
+id,model,state,tag,started_at,stopped_at,rounds,configuration
+1,LinuxPrivescUseCase,got root,,2024-11-07 09:16:42,2024-11-07 09:17:01,4,
+2,ExPrivEscLinuxTemplatedUseCase,got root,,2024-11-07 09:53:22,2024-11-07 09:53:34,3,
+3,WebTestingWithExplanationUseCase,reached max runs,,2024-11-07 10:27:23,2024-11-07 10:30:35,21,
+4,SimpleWebAPIDocumentationUseCase,in progress,,2024-11-07 10:36:48,,,
+5,SimpleWebAPIDocumentationUseCase,in progress,,2024-11-07 10:50:18,,,
+6,WebTestingWithExplanationUseCase,in progress,,2024-11-07 10:52:13,,,
+7,SimpleWebAPIDocumentationUseCase,got root,,2024-11-07 10:53:27,2024-11-07 10:54:53,20,
+8,SimpleWebAPIDocumentationUseCase,got root,,2024-11-07 11:15:32,2024-11-07 11:16:54,20,
+9,WebTestingWithExplanationUseCase,reached max runs,,2024-11-07 11:56:55,2024-11-07 11:58:04,21,
+10,WebTestingWithExplanationUseCase,reached max runs,,2024-11-07 11:59:34,2024-11-07 12:01:15,21,
+11,LinuxPrivescUseCase,got root,,2024-11-07 12:21:16,2024-11-07 12:21:31,5,

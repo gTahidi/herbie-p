@@ -9,6 +9,9 @@ from rich.panel import Panel
 from hackingBuddyGPT.usecases.web_api_testing.response_processing import ResponseHandler
 from hackingBuddyGPT.usecases.web_api_testing.utils import LLMHandler
 from hackingBuddyGPT.utils import tool_message
+import logging
+
+logger = logging.getLogger(__name__)
 class OpenAPISpecificationHandler(object):
     """
     Handles the generation and updating of an OpenAPI specification document based on dynamic API responses.
@@ -44,7 +47,7 @@ class OpenAPISpecificationHandler(object):
                 "version": "1.0",
                 "description": "Automatically generated description of the API."
             },
-            "servers": [{"url": "https://jsonplaceholder.typicode.com"}],
+            "servers": [{"url": "http://localhost:8080/docs/"}],
             "endpoints": {},
             "components": {"schemas": {}}
         }
@@ -154,7 +157,7 @@ class OpenAPISpecificationHandler(object):
             note (object): The note object containing the description of the API.
         """
         description = self.response_handler.extract_description(note)
-        from herbieP.web_api_testing.utils.documentation.parsing.yaml_assistant import YamlFileAssistant
+        from hackingBuddyGPT.web_api_testing.utils.documentation.parsing.yaml_assistant import YamlFileAssistant
         yaml_file_assistant = YamlFileAssistant(self.file_path, self.llm_handler)
         yaml_file_assistant.run(description)
 

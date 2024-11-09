@@ -2,6 +2,10 @@ from hackingBuddyGPT.capabilities import SSHRunCommand, SSHTestCredential
 from .common import Privesc
 from hackingBuddyGPT.utils import SSHConnection
 from hackingBuddyGPT.usecases.base import use_case, AutonomousAgentUseCase
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 
 class LinuxPrivesc(Privesc):

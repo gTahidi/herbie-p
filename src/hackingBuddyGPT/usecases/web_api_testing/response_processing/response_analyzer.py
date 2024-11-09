@@ -2,8 +2,9 @@ import json
 import re
 from typing import Optional, Tuple, Dict, Any
 from hackingBuddyGPT.usecases.web_api_testing.prompt_generation.information.prompt_information import PromptPurpose
+import logging
 
-
+logger = logging.getLogger(__name__)
 class ResponseAnalyzer:
     """
     A class to parse and analyze HTTP responses based on different purposes, such as
@@ -46,17 +47,29 @@ class ResponseAnalyzer:
         header_lines = header_body_split[0].split("\n")
         body = header_body_split[1] if len(header_body_split) > 1 else ""
 
-        if body != {} and bool(body and not body.isspace()):
-            body = json.loads(body)[0]
-        else:
-            body = "Empty"
-
         status_line = header_lines[0].strip()
-        headers = {key.strip(): value.strip() for key, value in
-                   (line.split(":", 1) for line in header_lines[1:] if ':' in line)}
-
         match = re.match(r"HTTP/1\.1 (\d{3}) (.*)", status_line)
         status_code = int(match.group(1)) if match else None
+
+        headers = {}
+        for line in header_lines[1:]:
+            if ':' in line:
+                key, value = line.split(":", 1)
+                headers[key.strip()] = value.strip()
+
+        # Determine if the body is empty or not
+        if body and not body.isspace():
+            try:
+                parsed_body = json.loads(body)
+                if isinstance(parsed_body, list) and len(parsed_body) > 0:
+                    body = json.dumps(parsed_body[0], indent=4)
+                else:
+                    body = json.dumps(parsed_body, indent=4) if isinstance(parsed_body, (dict, list)) else body
+            except json.JSONDecodeError:
+                # Body is not JSON
+                body = body.strip()
+        else:
+            body = "Empty"
 
         return status_code, headers, body
 
@@ -86,10 +99,16 @@ class ResponseAnalyzer:
             Optional[Dict[str, Any]]: The analysis results based on the purpose.
         """
         analysis_methods = {
-            PromptPurpose.AUTHENTICATION_AUTHORIZATION: self.analyze_authentication_authorization(status_code, headers, body),
-            PromptPurpose.INPUT_VALIDATION: self.analyze_input_validation(status_code, headers, body),
+            PromptPurpose.AUTHENTICATION_AUTHORIZATION: self.analyze_authentication_authorization,
+            PromptPurpose.INPUT_VALIDATION: self.analyze_input_validation,
         }
-        return analysis_methods.get(self.purpose)
+
+        analysis_method = analysis_methods.get(self.purpose)
+        if analysis_method:
+            return analysis_method(status_code, headers, body)
+        else:
+            print(f"No analysis method found for purpose: {self.purpose}")
+            return None
 
     def analyze_authentication_authorization(self, status_code: Optional[int], headers: Dict[str, str], body: str) -> Dict[str, Any]:
         """
@@ -105,16 +124,20 @@ class ResponseAnalyzer:
         """
         analysis = {
             'status_code': status_code,
-            'authentication_status': "Authenticated" if status_code == 200 else
-            "Not Authenticated or Not Authorized" if status_code in [401, 403] else "Unknown",
+            'authentication_status': (
+                "Authenticated" if status_code == 200 else
+                "Not Authenticated or Not Authorized" if status_code in [401, 403] else
+                "Unknown"
+            ),
             'auth_headers_present': any(
-                header in headers for header in ['Authorization', 'Set-Cookie', 'WWW-Authenticate']),
+                header in headers for header in ['Authorization', 'Set-Cookie', 'WWW-Authenticate']
+            ),
             'rate_limiting': {
                 'X-Ratelimit-Limit': headers.get('X-Ratelimit-Limit'),
                 'X-Ratelimit-Remaining': headers.get('X-Ratelimit-Remaining'),
                 'X-Ratelimit-Reset': headers.get('X-Ratelimit-Reset'),
             },
-            'content_body': "Empty" if body == {} else body,
+            'content_body': "Empty" if body == "Empty" else body,
         }
         return analysis
 
@@ -132,9 +155,11 @@ class ResponseAnalyzer:
         """
         analysis = {
             'status_code': status_code,
-            'response_body': "Empty" if body == {} else body,
+            'response_body': "Empty" if body == "Empty" else body,
             'is_valid_response': self.is_valid_input_response(status_code, body),
-            'security_headers_present': any(key in headers for key in ["X-Content-Type-Options", "X-Ratelimit-Limit"]),
+            'security_headers_present': any(
+                key in headers for key in ["X-Content-Type-Options", "X-Ratelimit-Limit"]
+            ),
         }
         return analysis
 
@@ -158,7 +183,14 @@ class ResponseAnalyzer:
         else:
             return "Unexpected"
 
-    def document_findings(self, status_code: Optional[int], headers: Dict[str, str], body: str, expected_behavior: str, actual_behavior: str) -> Dict[str, Any]:
+    def document_findings(
+        self,
+        status_code: Optional[int],
+        headers: Dict[str, str],
+        body: str,
+        expected_behavior: str,
+        actual_behavior: str
+    ) -> Dict[str, Any]:
         """
         Documents the findings from the analysis, comparing expected and actual behavior.
 
@@ -223,15 +255,14 @@ class ResponseAnalyzer:
 
         for label, value in fields_to_print.items():
             if label == "Content Body":
-                if value is not None:
-                    analysis_str += f"{label}: {fields_to_print['Content Body']}"
+                if value is not None and value != "Empty":
+                    analysis_str += f"{label}: {value}\n"
             else:
                 if value is not None:
                     analysis_str += f"{label}: {value}\n"
 
-        if "rate_limiting" in analysis:
+        if "rate_limiting" in analysis and any(v is not None for v in analysis["rate_limiting"].values()):
             analysis_str += "Rate Limiting Information:\n"
-
             for key, value in analysis["rate_limiting"].items():
                 analysis_str += f"  {key}: {value}\n"
 
@@ -242,43 +273,45 @@ class ResponseAnalyzer:
 if __name__ == '__main__':
     # Example HTTP response to parse
     raw_http_response = """HTTP/1.1 404 Not Found
-    Date: Fri, 16 Aug 2024 10:01:19 GMT
-    Content-Type: application/json; charset=utf-8
-    Content-Length: 2
-    Connection: keep-alive
-    Report-To: {"group":"heroku-nel","max_age":3600,"endpoints":[{"url":"https://nel.heroku.com/reports?ts=1723802269&sid=e11707d5-02a7-43ef-b45e-2cf4d2036f7d&s=dkvm744qehjJmab8kgf%2BGuZA8g%2FCCIkfoYc1UdYuZMc%3D"}]}
-    Reporting-Endpoints: heroku-nel=https://nel.heroku.com/reports?ts=1723802269&sid=e11707d5-02a7-43ef-b45e-2cf4d2036f7d&s=dkvm744qehjJmab8kgf%2BGuZA8g%2FCCIkfoYc1UdYuZMc%3D
-    Nel: {"report_to":"heroku-nel","max_age":3600,"success_fraction":0.005,"failure_fraction":0.05,"response_headers":["Via"]}
-    X-Powered-By: Express
-    X-Ratelimit-Limit: 1000
-    X-Ratelimit-Remaining: 999
-    X-Ratelimit-Reset: 1723802321
-    Vary: Origin, Accept-Encoding
-    Access-Control-Allow-Credentials: true
-    Cache-Control: max-age=43200
-    Pragma: no-cache
-    Expires: -1
-    X-Content-Type-Options: nosniff
-    Etag: W/"2-vyGp6PvFo4RvsFtPoIWeCReyIC8"
-    Via: 1.1 vegur
-    CF-Cache-Status: HIT
-    Age: 210
-    Server: cloudflare
-    CF-RAY: 8b40951728d9c289-VIE
-    alt-svc: h3=":443"; ma=86400
+Date: Fri, 16 Aug 2024 10:01:19 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 2
+Connection: keep-alive
+Report-To: {"group":"heroku-nel","max_age":3600,"endpoints":[{"url":"https://nel.heroku.com/reports?ts=1723802269&sid=e11707d5-02a7-43ef-b45e-2cf4d2036f7d&s=dkvm744qehjJmab8kgf%2BGuZA8g%2FCCIkfoYc1UdYuZMc%3D"}]}
+Reporting-Endpoints: heroku-nel=https://nel.heroku.com/reports?ts=1723802269&sid=e11707d5-02a7-43ef-b45e-2cf4d2036f7d&s=dkvm744qehjJmab8kgf%2BGuZA8g%2FCCIkfoYc1UdYuZMc%3D
+Nel: {"report_to":"heroku-nel","max_age":3600,"success_fraction":0.005,"failure_fraction":0.05,"response_headers":["Via"]}
+X-Powered-By: Express
+X-Ratelimit-Limit: 1000
+X-Ratelimit-Remaining: 999
+X-Ratelimit-Reset: 1723802321
+Vary: Origin, Accept-Encoding
+Access-Control-Allow-Credentials: true
+Cache-Control: max-age=43200
+Pragma: no-cache
+Expires: -1
+X-Content-Type-Options: nosniff
+Etag: W/"2-vyGp6PvFo4RvsFtPoIWeCReyIC8"
+Via: 1.1 vegur
+CF-Cache-Status: HIT
+Age: 210
+Server: cloudflare
+CF-RAY: 8b40951728d9c289-VIE
+alt-svc: h3=":443"; ma=86400
 
-    {}"""
-    response_analyzer = ResponseAnalyzer()
-    response_analyzer.purpose = PromptPurpose.AUTHENTICATION_AUTHORIZATION
-    # Parse and analyze the HTTP response
-    analysis = response_analyzer.analyze_response(raw_http_response)
+{}"""
 
-    # Print the analysis results
-    response_analyzer.print_analysis(analysis)
-    response_analyzer = ResponseAnalyzer()
-    response_analyzer.purpose = PromptPurpose.INPUT_VALIDATION
-    # Parse and analyze the HTTP response
-    analysis = response_analyzer.analyze_response(raw_http_response)
+    # Initialize ResponseAnalyzer for Authentication/Authorization
+    analyzer_auth = ResponseAnalyzer()
+    analyzer_auth.set_purpose(PromptPurpose.AUTHENTICATION_AUTHORIZATION)
+    analysis_auth = analyzer_auth.analyze_response(raw_http_response)
 
     # Print the analysis results
-    print(response_analyzer.print_analysis(analysis))
+    print(analyzer_auth.print_analysis(analysis_auth))
+
+    # Initialize ResponseAnalyzer for Input Validation
+    analyzer_input = ResponseAnalyzer()
+    analyzer_input.set_purpose(PromptPurpose.INPUT_VALIDATION)
+    analysis_input = analyzer_input.analyze_response(raw_http_response)
+
+    # Print the analysis results
+    print(analyzer_input.print_analysis(analysis_input))

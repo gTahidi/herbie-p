@@ -89,9 +89,8 @@ class DbStorage:
     def add_log_query(self, run_id, round, cmd, result, answer):
         self.cursor.execute(
             "INSERT INTO queries (run_id, round, cmd_id, query, response, duration, tokens_query, tokens_response, prompt, answer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-            run_id, round, self.query_cmd_id, cmd, result, answer.duration, answer.tokens_query, answer.tokens_response,
-            answer.prompt, answer.answer))
+            (run_id, round, self.query_cmd_id, cmd, result, answer.duration, answer.tokens_query, answer.tokens_response,
+             answer.prompt, answer.answer))
 
     def add_log_analyze_response(self, run_id, round, cmd, result, answer):
         self.cursor.execute(
@@ -100,7 +99,6 @@ class DbStorage:
              answer.tokens_response, answer.prompt, answer.answer))
 
     def add_log_update_state(self, run_id, round, cmd, result, answer):
-
         if answer is not None:
             self.cursor.execute(
                 "INSERT INTO queries (run_id, round, cmd_id, query, response, duration, tokens_query, tokens_response, prompt, answer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -125,7 +123,7 @@ class DbStorage:
 
     def get_round_data(self, run_id, round, explanation, status_update):
         rows = self.cursor.execute(
-            "select cmd_id, query, response, duration, tokens_query, tokens_response from queries where run_id = ? and round = ?",
+            "SELECT cmd_id, query, response, duration, tokens_query, tokens_response FROM queries WHERE run_id = ? AND round = ?",
             (run_id, round)).fetchall()
         if len(rows) == 0:
             return []
@@ -152,14 +150,14 @@ class DbStorage:
         return result
 
     def get_max_round_for(self, run_id):
-        run = self.cursor.execute("select max(round) from queries where run_id = ?", (run_id,)).fetchone()
+        run = self.cursor.execute("SELECT max(round) FROM queries WHERE run_id = ?", (run_id,)).fetchone()
         if run is not None:
             return run[0]
         else:
             return None
 
     def get_run_data(self, run_id):
-        run = self.cursor.execute("select * from runs where id = ?", (run_id,)).fetchone()
+        run = self.cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if run is not None:
             return run[1], run[2], run[4], run[3], run[7], run[8]
         else:
@@ -168,10 +166,10 @@ class DbStorage:
     def get_log_overview(self):
         result = {}
 
-        max_rounds = self.cursor.execute("select run_id, max(round) from queries group by run_id").fetchall()
+        max_rounds = self.cursor.execute("SELECT run_id, max(round) FROM queries GROUP BY run_id").fetchall()
         for row in max_rounds:
-            state = self.cursor.execute("select state from runs where id = ?", (row[0],)).fetchone()
-            last_cmd = self.cursor.execute("select query from queries where run_id = ? and round = ?",
+            state = self.cursor.execute("SELECT state FROM runs WHERE id = ?", (row[0],)).fetchone()
+            last_cmd = self.cursor.execute("SELECT query FROM queries WHERE run_id = ? AND round = ?",
                                            (row[0], row[1])).fetchone()
 
             result[row[0]] = {
@@ -184,23 +182,22 @@ class DbStorage:
 
     def get_cmd_history(self, run_id):
         rows = self.cursor.execute(
-            "select query, response from queries where run_id = ? and cmd_id = ? order by round asc",
+            "SELECT query, response FROM queries WHERE run_id = ? AND cmd_id = ? ORDER BY round ASC",
             (run_id, self.query_cmd_id)).fetchall()
 
         result = []
-
         for row in rows:
             result.append([row[0], row[1]])
 
         return result
 
     def run_was_success(self, run_id, round):
-        self.cursor.execute("update runs set state=?,stopped_at=datetime('now'), rounds=? where id = ?",
+        self.cursor.execute("UPDATE runs SET state=?,stopped_at=datetime('now'), rounds=? WHERE id = ?",
                             ("got root", round, run_id))
         self.db.commit()
 
     def run_was_failure(self, run_id, round):
-        self.cursor.execute("update runs set state=?, stopped_at=datetime('now'), rounds=? where id = ?",
+        self.cursor.execute("UPDATE runs SET state=?, stopped_at=datetime('now'), rounds=? WHERE id = ?",
                             ("reached max runs", round, run_id))
         self.db.commit()
 

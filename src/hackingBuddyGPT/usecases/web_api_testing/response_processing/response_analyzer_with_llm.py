@@ -79,7 +79,7 @@ if __name__ == '__main__':
     # Assuming 'llm' is already initialized and has 'api_key' set
     # For example:
     from hackingBuddyGPT.utils.openai.openai_lib import OpenAILib
-    llm = OpenAILib(api_key='getfromENV')
+    llm = OpenAILib
     llm_handler = LLMHandler(llm=llm, capabilities=capabilities)
     response_analyzer = ResponseAnalyzerWithLLM(
         purpose=PromptPurpose.PARSING,

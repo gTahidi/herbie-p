@@ -1,7 +1,7 @@
 """
 Nuclei plugin for advanced vulnerability scanning with Docker support.
 """
-from typing import Optional, List, Dict, Any, Union, Annotated
+from typing import Optional, List, Dict, Any, Union, Annotated, Tuple
 from enum import Enum
 import semantic_kernel as sk
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
@@ -107,16 +107,17 @@ class NucleiPlugin:
     """Plugin for advanced vulnerability scanning using nuclei with Docker support."""
 
     def __init__(self):
-        """Initialize the nuclei plugin with Docker if available."""
-        self.templates_dir = Path.home() / ".nuclei" / "templates"
+        """Initialize the plugin with Docker support."""
         self.use_docker = False
         self.docker_client = None
         self.image_name = "projectdiscovery/nuclei:latest"
-        self.stats = None
-        
+        self.container_name = "nuclei-persistent"
+        self.templates_dir = Path.home() / ".nuclei" / "templates"
+        self.stats = ScanStats()
+
         with LogContext("NucleiPlugin Initialization"):
             try:
-                # Create templates directory
+                # Create templates directory for custom templates
                 self.templates_dir.mkdir(parents=True, exist_ok=True)
                 log_separator(logger, f"Templates directory initialized: {self.templates_dir}", logging.INFO)
                 
@@ -129,15 +130,12 @@ class NucleiPlugin:
                         self.use_docker = True
                         log_separator(logger, "Docker initialized successfully", logging.INFO)
                         
-                        # Check for nuclei image
-                        try:
-                            self.docker_client.images.get(self.image_name)
-                            log_separator(logger, f"Docker image {self.image_name} found", logging.INFO)
-                        except ImageNotFound:
-                            log_separator(logger, f"Pulling Docker image {self.image_name}", logging.INFO)
-                            self.docker_client.images.pull(self.image_name)
+                        # Initialize persistent container
+                        self._init_persistent_container()
+                            
                     except DockerException as e:
                         log_separator(logger, f"Docker not accessible: {e}", logging.WARNING)
+                        self.use_docker = False
                 
                 if not self.use_docker:
                     log_separator(logger, "Docker not available. Please ensure Docker is running and accessible.", logging.WARNING)
@@ -145,6 +143,80 @@ class NucleiPlugin:
             except Exception as e:
                 log_separator(logger, f"Failed to initialize plugin: {e}", logging.ERROR)
                 raise
+
+    def _init_persistent_container(self):
+        """Initialize or verify the persistent container for template storage."""
+        try:
+            # Check if persistent container exists
+            try:
+                container = self.docker_client.containers.get(self.container_name)
+                log_separator(logger, f"Found existing persistent container: {self.container_name}", logging.INFO)
+                
+                # Check container status
+                if container.status != "running":
+                    log_separator(logger, "Starting existing container...", logging.INFO)
+                    container.start()
+                    
+                # Update templates in existing container
+                log_separator(logger, "Updating templates in persistent container...", logging.INFO)
+                exec_result = container.exec_run(
+                    cmd=["/bin/sh", "-c", "nuclei -update-templates -ut"],
+                    workdir="/root"
+                )
+                if exec_result.exit_code == 0:
+                    log_separator(logger, "Templates updated successfully", logging.INFO)
+                else:
+                    log_separator(logger, f"Template update warning: {exec_result.output.decode()}", logging.WARNING)
+                    
+            except docker.errors.NotFound:
+                log_separator(logger, "Creating new persistent container...", logging.INFO)
+                
+                # Pull the latest image
+                try:
+                    self.docker_client.images.get(self.image_name)
+                except ImageNotFound:
+                    log_separator(logger, f"Pulling Docker image {self.image_name}", logging.INFO)
+                    self.docker_client.images.pull(self.image_name)
+                
+                # Create persistent container
+                container = self.docker_client.containers.run(
+                    self.image_name,
+                    name=self.container_name,
+                    command="tail -f /dev/null",  # Keep container running
+                    detach=True,
+                    restart_policy={"Name": "unless-stopped"},
+                    volumes={
+                        str(self.templates_dir): {
+                            'bind': '/root/.nuclei/templates',
+                            'mode': 'rw'
+                        }
+                    }
+                )
+                
+                # Initialize templates
+                log_separator(logger, "Installing templates in new container...", logging.INFO)
+                exec_result = container.exec_run(
+                    cmd=["/bin/sh", "-c", "nuclei -update-templates -ut"],
+                    workdir="/root"
+                )
+                if exec_result.exit_code == 0:
+                    log_separator(logger, "Templates installed successfully", logging.INFO)
+                else:
+                    log_separator(logger, f"Template installation warning: {exec_result.output.decode()}", logging.WARNING)
+                
+            # Verify templates
+            exec_result = container.exec_run(
+                cmd=["/bin/sh", "-c", "nuclei -tl"],
+                workdir="/root"
+            )
+            if exec_result.exit_code == 0:
+                log_separator(logger, f"Template verification: {exec_result.output.decode()}", logging.INFO)
+            else:
+                log_separator(logger, f"Template verification warning: {exec_result.output.decode()}", logging.WARNING)
+                
+        except Exception as e:
+            log_separator(logger, f"Error initializing persistent container: {e}", logging.ERROR)
+            raise
 
     @log_step("Input Validation", level=logging.INFO)
     def _validate_input(self, target: str, input_mode: InputMode = InputMode.LIST) -> bool:
@@ -172,84 +244,58 @@ class NucleiPlugin:
             return False
 
     @log_step("Nuclei Scan Execution", level=logging.INFO)
-    def _run_nuclei_scan(self, cmd: List[str], volumes: Dict[str, Dict[str, str]] = None) -> tuple[List[NucleiResult], List[str]]:
+    def _run_nuclei_scan(self, cmd: List[str], volumes: Dict[str, Dict[str, str]] = None) -> Tuple[List[NucleiResult], List[str]]:
         """Run nuclei scan using Docker."""
         results = []
         errors = []
-        self.stats = ScanStats()
         
         try:
-            if not self.use_docker:
-                raise DockerException("Docker is not available")
+            # Get persistent container
+            container = self.docker_client.containers.get(self.container_name)
             
-            # Default volumes
-            if volumes is None:
-                volumes = {
-                    str(self.templates_dir): {
-                        'bind': '/root/.nuclei/templates',
-                        'mode': 'rw'
-                    }
-                }
+            # Ensure container is running
+            if container.status != "running":
+                container.start()
             
-            log_separator(logger, "Starting Docker container with following configuration:", logging.INFO)
-            log_separator(logger, f"Image: {self.image_name}", logging.INFO)
+            log_separator(logger, "Running scan in persistent container...", logging.INFO)
             log_separator(logger, f"Command: nuclei {' '.join(cmd)}", logging.INFO)
-            log_separator(logger, f"Volumes: {json.dumps(volumes, indent=2)}", logging.INFO)
             
-            # Run nuclei in Docker
-            container = self.docker_client.containers.run(
-                self.image_name,
-                command=cmd,
-                remove=True,
-                detach=True,
-                volumes=volumes
+            # Run scan using exec
+            exec_result = container.exec_run(
+                cmd=["nuclei"] + cmd,
+                workdir="/root"
             )
             
-            log_separator(logger, f"Container started: {container.id}", logging.INFO)
+            # Process output
+            output = exec_result.output.decode('utf-8')
+            for line in output.splitlines():
+                if line.strip():
+                    try:
+                        result = json.loads(line)
+                        if "template" in result:
+                            results.append(NucleiResult(**result))
+                            self.stats.vulnerabilities_found += 1
+                            
+                            # Log vulnerability details
+                            log_separator(logger, f"Vulnerability found:", logging.INFO)
+                            log_separator(logger, f"  Template: {result.get('template')}", logging.INFO)
+                            log_separator(logger, f"  Host: {result.get('host')}", logging.INFO)
+                            log_separator(logger, f"  Severity: {result.get('severity')}", logging.INFO)
+                    except json.JSONDecodeError:
+                        if "templates processed" in line.lower():
+                            self.stats.templates_processed += 1
+                        elif "hosts scanned" in line.lower():
+                            self.stats.hosts_scanned += 1
+                        logger.debug(f"Non-JSON output: {line}")
+                    except Exception as e:
+                        log_separator(logger, f"Error processing output line: {str(e)}", logging.ERROR)
+                        errors.append(f"Error processing output line: {str(e)}")
+                        self.stats.errors_encountered += 1
             
-            # Stream and decode logs manually
-            log_separator(logger, "Processing scan output...", logging.INFO)
-            for log_bytes in container.logs(stream=True):
-                try:
-                    log_line = log_bytes.decode('utf-8').strip()
-                    if log_line:
-                        if log_line.startswith('{'):
-                            try:
-                                result = json.loads(log_line)
-                                results.append(NucleiResult(**result))
-                                self.stats.vulnerabilities_found += 1
-                                
-                                # Log vulnerability details
-                                log_separator(logger, f"Vulnerability found:", logging.INFO)
-                                log_separator(logger, f"  Template: {result.get('template')}", logging.INFO)
-                                log_separator(logger, f"  Host: {result.get('host')}", logging.INFO)
-                                log_separator(logger, f"  Severity: {result.get('severity')}", logging.INFO)
-                                
-                            except json.JSONDecodeError:
-                                log_separator(logger, f"Failed to parse JSON output: {log_line}", logging.WARNING)
-                                errors.append(log_line)
-                                self.stats.errors_encountered += 1
-                        else:
-                            # Process non-JSON output for statistics
-                            if "templates processed" in log_line.lower():
-                                self.stats.templates_processed += 1
-                            elif "hosts scanned" in log_line.lower():
-                                self.stats.hosts_scanned += 1
-                            log_separator(logger, f"Non-JSON output: {log_line}", logging.DEBUG)
-                except Exception as e:
-                    log_separator(logger, f"Error processing log line: {str(e)}", logging.ERROR)
-                    errors.append(f"Error processing log line: {str(e)}")
-                    self.stats.errors_encountered += 1
-
-            # Wait for container to complete and check exit code
-            result = container.wait()
-            exit_code = result.get('StatusCode', -1)
-            
-            if exit_code != 0:
-                error_msg = result.get('Error', {}).get('Message', f"Container exited with code {exit_code}")
-                log_separator(logger, f"Scan failed: {error_msg}", logging.ERROR)
+            if exec_result.exit_code != 0:
+                error_msg = f"Scan failed with exit code {exec_result.exit_code}"
+                log_separator(logger, error_msg, logging.ERROR)
                 errors.append(error_msg)
-                self.stats.errors_encountered += 1
             else:
                 log_separator(logger, "Scan completed successfully", logging.INFO)
             
@@ -289,17 +335,8 @@ class NucleiPlugin:
                     f"Exclude Tags: {exclude_tags}, Vars: {vars}")
 
         try:
-            # Validate input mode
-            try:
-                input_mode_enum = InputMode(input_mode.lower())
-            except ValueError:
-                error_msg = f"Invalid input mode: {input_mode}. Supported modes: {', '.join([m.value for m in InputMode])}"
-                log_separator(logger, error_msg, logging.ERROR)
-                return error_msg
-
-            # Validate input
-            if not self._validate_input(target, input_mode_enum):
-                error_msg = "Invalid input. Please check logs for details."
+            if not self.use_docker:
+                error_msg = "Docker is not available. Please ensure Docker is running and accessible."
                 log_separator(logger, error_msg, logging.ERROR)
                 return error_msg
 
@@ -307,13 +344,10 @@ class NucleiPlugin:
             cmd = []
             
             # Add target specification
-            if input_mode_enum == InputMode.LIST:
-                cmd.extend(["-target", target])  # Using -target instead of -u
-            else:
-                cmd.extend(["-l", target, "-im", input_mode_enum.value])
+            cmd.extend(["-target", target])
 
             # Add common parameters
-            cmd.extend(["-json-output"])  # Using -json-output instead of -json
+            cmd.extend(["-j"])  # Use -j for JSON output
             
             if severity:
                 cmd.extend(["-severity", severity])
@@ -322,7 +356,7 @@ class NucleiPlugin:
             if exclude_tags:
                 cmd.extend(["-exclude-tags", exclude_tags])
             if vars:
-                cmd.extend(["-var", vars])  # Using -var instead of -vars
+                cmd.extend(["-var", vars])
             if required_only:
                 cmd.append("-ro")
             if skip_format_validation:
@@ -331,13 +365,11 @@ class NucleiPlugin:
             logger.debug(f"Command: nuclei {' '.join(cmd)}")
 
             # Set up volumes for file-based inputs
-            volumes = {str(self.templates_dir): {'bind': '/root/.nuclei/templates', 'mode': 'rw'}}
-            if input_mode_enum != InputMode.LIST:
-                # Add volume mapping for input file
-                input_file = Path(target).resolve()
-                volumes[str(input_file.parent)] = {'bind': '/input', 'mode': 'ro'}
-                # Update command to use mounted path
-                cmd = [arg.replace(str(input_file), f"/input/{input_file.name}") for arg in cmd]
+            volumes = {}
+            
+            # If we have custom templates, add them to volumes
+            if any(self.templates_dir.iterdir()):
+                volumes[str(self.templates_dir)] = {'bind': '/root/.nuclei/templates', 'mode': 'rw'}
 
             results, errors = self._run_nuclei_scan(cmd, volumes)
 

@@ -29,9 +29,7 @@ Herbie is an advanced security testing copilot that automates and enhances secur
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/herbie-p.git
-cd herbie-p
-```
+
 
 2. Create and activate a virtual environment:
 ```bash
